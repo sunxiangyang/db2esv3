@@ -1,0 +1,33 @@
+db:
+  url: "jdbc:postgresql://172.16.11.5:5432/lhcz"
+  user: "postgres"
+  password: "Pg_ice_2021"
+  maxLifetimeMs: 600000    # 10分钟
+  idleTimeoutMs: 300000    # 5分钟
+  minIdle: 2
+  maxPoolSize: 10
+
+
+es:
+  url: "http://172.16.11.7:19220"
+  user: "elastic"
+  password: "Lces_2023_9999"
+  # 对应原 esPageSize=1000
+  batchSize: 5000
+  # 默认刷新间隔，单位毫秒
+  flushIntervalMs: 5000
+
+tasks:
+  # 对应原 DataSync.json 中的任务数组
+  - tableName: "v_person_pass"     # 原: "table": "v_person_pass"
+    idColumn: "id"
+    pkColumn: "id"
+    columns: "*"                   # 原: "selCols": "*"
+    esIndex: "person_pass"               # 原: "esIndex": "newpp"
+    startId: 1
+  - tableName: "v_car_pass"
+    idColumn: "id"
+    pkColumn: "id"
+    columns: "*"
+    esIndex: "car_pass"
+    startId: 1
