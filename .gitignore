@@ -1,0 +1,47 @@
+# --- 编译产物 ---
+bin/
+gen/
+out/
+target/
+build/
+.gradle/
+*.class
+*.war
+*.ear
+*.zip
+*.tar.gz
+*.rar
+*.yaml
+
+# --- IntelliJ IDEA ---
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+cmake-build-*/
+
+
+# --- VS Code ---
+.vscode/
+.history/
+*.code-workspace
+
+# --- Eclipse ---
+.settings/
+.project
+.classpath
+.factorypath
+
+# --- 日志与临时文件 ---
+*.log
+logs/
+temp/
+tmp/
+
+# --- 操作系统相关 ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+
