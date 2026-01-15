@@ -11,6 +11,7 @@ build/
 *.zip
 *.tar.gz
 *.rar
+*.yaml
 
 # --- IntelliJ IDEA ---
 .idea/
@@ -19,6 +20,7 @@ build/
 *.ipr
 out/
 cmake-build-*/
+resources/
 
 # --- VS Code ---
 .vscode/
@@ -41,4 +43,5 @@ tmp/
 .DS_Store
 Thumbs.db
 desktop.ini
+
 
