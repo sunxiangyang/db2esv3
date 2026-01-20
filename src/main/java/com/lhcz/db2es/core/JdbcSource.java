@@ -28,7 +28,7 @@ public class JdbcSource implements Runnable {
 
     // 新增：回溯检查的时间间隔 (60秒)
     private static final long REWIND_INTERVAL_MS = 60000L;
-    private static final long REWIND_OFFSET = 10000L;
+    private static final long REWIND_OFFSET = 50000L;
 
     // 🟢 新增：内存中的回溯游标
     private long rewindStartId;
