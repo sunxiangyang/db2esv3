@@ -88,10 +88,20 @@ public class EsSink implements Runnable {
         String realType = (taskConfig.esType() != null && !taskConfig.esType().isBlank()) ? taskConfig.esType() : "_doc";
 
         StringBuilder bulkBody = new StringBuilder();
+        // 检查本批次是否包含正常数据 (用于决定是否更新 Checkpoint)
+        SyncData lastNormalData = null;
+        int repairCount = 0;
+
         for (SyncData item : batch) {
             bulkBody.append(String.format("{\"index\":{\"_index\":\"%s\",\"_type\":\"%s\",\"_id\":\"%s\"}}\n",
                     realIndex, realType, item.esIdVal()));
             bulkBody.append(item.jsonBody()).append("\n");
+
+            if (!item.isRepair()) {
+                lastNormalData = item;
+            } else {
+                repairCount++;
+            }
         }
 
         // 构建 Auth
@@ -127,15 +137,21 @@ public class EsSink implements Runnable {
                         return; // 本批次结束，不抛异常，避免阻塞流水线
                     }
 
-                    log.info("✅ 成功写入 [{}] -> ES [{}] ({} 条)", taskConfig.tableName(), realIndex, batch.size());
+                    // 🟢 修改：根据数据类型输出不同日志并控制 Checkpoint
+                    if (repairCount == batch.size()) {
+                        // 全是修复数据
+                        log.info("✅ [回溯验证] 成功将 {} 条历史数据再次写入 ES (用于填补并发空洞)", repairCount);
+                    } else {
+                        // 包含正常数据
+                        log.info("✅ 成功写入 [{}] -> ES [{}] ({} 条, 含 {} 条修复)",
+                                taskConfig.tableName(), realIndex, batch.size(), repairCount);
+                    }
 
-                    if (!batch.isEmpty()) {
-                        SyncData lastSyncData = batch.get(batch.size() - 1);
-                        // 🔴 获取ID和时间戳游标
-                        long lastIdCursor = lastSyncData.idCursorVal();
-                        String lastTimestampCursor = lastSyncData.timestampCursorVal();
-
-                        // 🔴 封装为Checkpoint对象并保存
+                    // 🟢 关键：只有存在正常增量数据时，才更新 Checkpoint
+                    // 防止回溯的历史旧 ID 覆盖了当前的最新进度
+                    if (lastNormalData != null) {
+                        long lastIdCursor = lastNormalData.idCursorVal();
+                        String lastTimestampCursor = lastNormalData.timestampCursorVal();
                         checkpointManager.save(taskConfig.tableName(), new CheckpointManager.Checkpoint(lastIdCursor, lastTimestampCursor));
                     }
                     return;
