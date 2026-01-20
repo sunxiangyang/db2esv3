@@ -13,6 +13,9 @@ public class CheckpointManager {
     private static final String FILE_NAME = "checkpoint.properties";
     private final Properties props = new Properties();
 
+    // 🟢 新增：定义 Checkpoint 数据结构，供 EsSink 使用
+    public record Checkpoint(long idVal, String timestampVal) {}
+
     public CheckpointManager() {
         load();
     }
@@ -34,12 +37,31 @@ public class CheckpointManager {
         return configStartId;
     }
 
-    public synchronized void save(String tableName, String lastId) {
-        props.setProperty(tableName, lastId);
+    // 🟢 新增：获取回溯起始 ID
+    public long getRewindId(String tableName, long defaultVal) {
+        String val = props.getProperty(tableName + ".rewind");
+        if (val != null && !val.isBlank()) {
+            return Long.parseLong(val);
+        }
+        return defaultVal;
+    }
+
+    public synchronized void save(String tableName, Checkpoint checkpoint) {
+        props.setProperty(tableName, String.valueOf(checkpoint.idVal));
+        saveToFile();
+    }
+
+    // 🟢 新增：单独保存回溯进度
+    public synchronized void saveRewind(String tableName, long rewindId) {
+        props.setProperty(tableName + ".rewind", String.valueOf(rewindId));
+        saveToFile();
+    }
+
+    private void saveToFile() {
         try (FileOutputStream out = new FileOutputStream(FILE_NAME)) {
             props.store(out, "Db2Es 数据同步进度");
         } catch (IOException e) {
-            log.error("保存进度失败! 表: {}", tableName, e);
+            log.error("保存进度失败!", e);
         }
     }
 }

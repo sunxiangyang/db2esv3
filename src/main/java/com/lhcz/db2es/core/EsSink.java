@@ -84,12 +84,17 @@ public class EsSink implements Runnable {
     }
 
     private void flush(List<SyncData> batch) {
+        if (batch.isEmpty()) return;
+
         String realIndex = resolveIndexName(taskConfig.esIndex());
         String realType = (taskConfig.esType() != null && !taskConfig.esType().isBlank()) ? taskConfig.esType() : "_doc";
 
         StringBuilder bulkBody = new StringBuilder();
         // 检查本批次是否包含正常数据 (用于决定是否更新 Checkpoint)
         SyncData lastNormalData = null;
+
+        // 🟢 新增：记录本批次中最大的修复ID
+        long maxRepairId = -1;
         int repairCount = 0;
 
         for (SyncData item : batch) {
@@ -101,6 +106,10 @@ public class EsSink implements Runnable {
                 lastNormalData = item;
             } else {
                 repairCount++;
+                // 追踪最大的修复ID
+                if (item.idCursorVal() > maxRepairId) {
+                    maxRepairId = item.idCursorVal();
+                }
             }
         }
 
@@ -154,6 +163,13 @@ public class EsSink implements Runnable {
                         String lastTimestampCursor = lastNormalData.timestampCursorVal();
                         checkpointManager.save(taskConfig.tableName(), new CheckpointManager.Checkpoint(lastIdCursor, lastTimestampCursor));
                     }
+
+                    // 🟢 2. 处理回溯修复进度
+                    // 如果本批次包含修复数据，将其中最大的ID保存到 checkpoint 文件
+                    if (maxRepairId > 0) {
+                        checkpointManager.saveRewind(taskConfig.tableName(), maxRepairId);
+                    }
+
                     return;
                 } else {
                     lastErrorReason = "HTTP_" + response.statusCode();

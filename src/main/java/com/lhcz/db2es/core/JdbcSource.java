@@ -30,6 +30,9 @@ public class JdbcSource implements Runnable {
     private static final long REWIND_INTERVAL_MS = 60000L;
     private static final long REWIND_OFFSET = 10000L;
 
+    // 🟢 新增：内存中的回溯游标
+    private long rewindStartId;
+
     public JdbcSource(HikariDataSource ds, AppConfig.TaskConfig task, BlockingQueue<SyncData> queue, CheckpointManager cm) {
         this.ds = ds;
         this.task = task;
@@ -41,10 +44,14 @@ public class JdbcSource implements Runnable {
     public void run() {
         // 1. 获取起始进度 (优先读取断点文件，没有则使用配置的 startId)
         long currentId = checkpointManager.getStartId(task.tableName(), task.startId());
+
+        // 🟢 初始化回溯游标：优先读文件，没有则默认从当前-10000开始
+        this.rewindStartId = checkpointManager.getRewindId(task.tableName(), Math.max(0, currentId - REWIND_OFFSET));
+
         int pageSize = 5000; // 每次查询条数，建议 2000-5000
         long lastRewindTime = System.currentTimeMillis(); // 记录上次回溯时间
 
-        log.info("任务 [{}] 启动，从 ID: {} 开始同步", task.tableName(), currentId);
+        log.info("任务 [{}] 启动，主进度ID: {}, 回溯进度ID: {}", task.tableName(), currentId, rewindStartId);
 
         // 2. 主循环：只要 running 为 true，就一直运行
         // 将 try-catch 放进循环内部，确保发生异常（如断网）后能重试，而不是直接退出线程
@@ -140,11 +147,18 @@ public class JdbcSource implements Runnable {
     }
 
     /**
-     * 执行回溯校验：读取 [currentId - 10000, currentId] 范围的数据
+     * 执行回溯校验：读取 [rewindStartId, currentId - 10000] 范围的数据
      */
     private void performRewindCheck(long currentMaxId) {
-        long startId = Math.max(0, currentMaxId - REWIND_OFFSET);
-        log.info("🔄 正在执行回溯校验: 表[{}] 范围 [{} - {}]", task.tableName(), startId, currentMaxId);
+        // 设定回溯的目标终点：当前主进度 - 10000
+        long targetEndId = Math.max(0, currentMaxId - REWIND_OFFSET);
+
+        // 如果回溯进度已经追上了目标，则无需执行
+        if (rewindStartId >= targetEndId) {
+            return;
+        }
+
+        log.info("🔄 [回溯校验] 表[{}] 范围 ({} - {}]", task.tableName(), rewindStartId, targetEndId);
 
         // 查询范围数据的 SQL (不需要排序，只要把数据捞出来即可)
         String sql = String.format("SELECT %s FROM %s WHERE %s > ? AND %s <= ?",
@@ -153,8 +167,8 @@ public class JdbcSource implements Runnable {
         try (Connection conn = ds.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
 
-            ps.setLong(1, startId);
-            ps.setLong(2, currentMaxId);
+            ps.setLong(1, rewindStartId);
+            ps.setLong(2, targetEndId);
 
             int count = 0;
             try (ResultSet rs = ps.executeQuery()) {
@@ -169,7 +183,17 @@ public class JdbcSource implements Runnable {
                     count++;
                 }
             }
-            log.info("🔄 回溯校验完成: 表[{}] 推送了 {} 条历史数据进行二次验证", task.tableName(), count);
+
+            if (count > 0) {
+                log.info("🔄 [回溯校验] 发现 {} 条数据，已推送到 ES 进行修补", count);
+                // 有数据时，由 Sink 负责保存进度
+                this.rewindStartId = targetEndId;
+            } else {
+                // 🟢 关键：如果范围内没有数据，说明是安全的，直接保存回溯进度
+                log.info("🔄 [回溯校验] 范围无数据，直接推进回溯进度至 {}", targetEndId);
+                checkpointManager.saveRewind(task.tableName(), targetEndId);
+                this.rewindStartId = targetEndId;
+            }
         } catch (Exception e) {
             log.error("⚠️ 回溯校验失败 (不影响主流程): {}", e.getMessage());
         }
