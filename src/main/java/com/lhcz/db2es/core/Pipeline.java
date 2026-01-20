@@ -82,6 +82,8 @@ public class Pipeline {
         if (config.web() != null && config.web().port() != null) {
             WebConsole webConsole = new WebConsole(config.web().port(), sources, sinks);
             webConsole.start();
+        } else {
+            log.info("ℹ️ Web 控制台未启用。如需监控任务，请在配置文件中添加 web.port 配置。");
         }
     }
 
