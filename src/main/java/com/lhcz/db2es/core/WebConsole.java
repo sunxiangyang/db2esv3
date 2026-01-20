@@ -57,25 +57,93 @@ public class WebConsole {
                     <meta charset="UTF-8">
                     <meta name="viewport" content="width=device-width, initial-scale=1.0">
                     <title>Db2Es 任务监控</title>
-                    <script src="https://cdn.tailwindcss.com"></script>
+                    <style>
+                        body {
+                            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+                            background-color: #f3f4f6;
+                            margin: 0;
+                            padding: 20px;
+                            color: #1f2937;
+                        }
+                        .container {
+                            max-width: 1200px;
+                            margin: 0 auto;
+                        }
+                        .header {
+                            display: flex;
+                            justify-content: space-between;
+                            align-items: center;
+                            margin-bottom: 20px;
+                        }
+                        h1 {
+                            font-size: 1.5rem;
+                            font-weight: bold;
+                            margin: 0;
+                        }
+                        .refresh-hint {
+                            font-size: 0.875rem;
+                            color: #6b7280;
+                        }
+                        .card {
+                            background: white;
+                            border-radius: 8px;
+                            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+                            overflow: hidden;
+                        }
+                        table {
+                            width: 100%;
+                            border-collapse: collapse;
+                            text-align: left;
+                        }
+                        th {
+                            background-color: #f9fafb;
+                            color: #4b5563;
+                            font-weight: 600;
+                            text-transform: uppercase;
+                            font-size: 0.75rem;
+                            padding: 12px 24px;
+                            border-bottom: 2px solid #e5e7eb;
+                        }
+                        td {
+                            padding: 12px 24px;
+                            border-bottom: 1px solid #e5e7eb;
+                            font-size: 0.875rem;
+                        }
+                        tr:last-child td {
+                            border-bottom: none;
+                        }
+                        .badge {
+                            display: inline-block;
+                            padding: 2px 8px;
+                            font-size: 0.75rem;
+                            font-weight: 600;
+                            border-radius: 9999px;
+                            background-color: #dbeafe;
+                            color: #1e40af;
+                        }
+                        .text-green { color: #059669; font-weight: bold; }
+                        .text-yellow { color: #d97706; font-weight: bold; }
+                        .text-red { color: #dc2626; font-weight: bold; }
+                        .font-bold { font-weight: bold; }
+                    </style>
                 </head>
-                <body class="bg-gray-100 p-8">
-                    <div class="max-w-6xl mx-auto">
-                        <div class="flex justify-between items-center mb-8">
-                            <h1 class="text-3xl font-bold text-gray-800">Db2Es 数据同步监控</h1>
-                            <span class="text-sm text-gray-500">自动刷新中...</span>
+                <body>
+                    <div class="container">
+                        <div class="header">
+                            <h1>Db2Es 数据同步监控</h1>
+                            <span class="refresh-hint">自动刷新中...</span>
                         </div>
                         
-                        <div class="bg-white shadow-md rounded-lg overflow-hidden">
-                            <table class="min-w-full leading-normal">
+                        <div class="card">
+                            <table>
                                 <thead>
                                     <tr>
-                                        <th class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">表名 (Table)</th>
-                                        <th class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">索引 (Index)</th>
-                                        <th class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">当前 ID 进度</th>
-                                        <th class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">当日创建 (Created)</th>
-                                        <th class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">当日更新 (Updated)</th>
-                                        <th class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">当日失败 (Failed)</th>
+                                        <th>表名 (Table)</th>
+                                        <th>索引 (Index)</th>
+                                        <th>当前 ID 进度</th>
+                                        <th>当日创建 (Created)</th>
+                                        <th>当日更新 (Updated)</th>
+                                        <th>当日失败 (Failed)</th>
                                     </tr>
                                 </thead>
                                 <tbody id="task-list">
@@ -95,30 +163,23 @@ public class WebConsole {
                                     data.forEach(task => {
                                         const row = `
                                             <tr>
-                                                <td class="px-5 py-5 border-b border-gray-200 bg-white text-sm">
-                                                    <div class="flex items-center">
-                                                        <div class="ml-3">
-                                                            <p class="text-gray-900 whitespace-no-wrap font-bold">${task.tableName}</p>
-                                                        </div>
-                                                    </div>
+                                                <td>
+                                                    <span class="font-bold">${task.tableName}</span>
                                                 </td>
-                                                <td class="px-5 py-5 border-b border-gray-200 bg-white text-sm">
-                                                    <p class="text-gray-900 whitespace-no-wrap">${task.esIndex}</p>
+                                                <td>
+                                                    ${task.esIndex}
                                                 </td>
-                                                <td class="px-5 py-5 border-b border-gray-200 bg-white text-sm">
-                                                    <span class="relative inline-block px-3 py-1 font-semibold text-blue-900 leading-tight">
-                                                        <span aria-hidden="true" class="absolute inset-0 bg-blue-200 opacity-50 rounded-full"></span>
-                                                        <span class="relative">${task.currentId}</span>
-                                                    </span>
+                                                <td>
+                                                    <span class="badge">${task.currentId}</span>
                                                 </td>
-                                                <td class="px-5 py-5 border-b border-gray-200 bg-white text-sm">
-                                                    <p class="text-green-600 whitespace-no-wrap font-bold">+${task.totalCreated}</p>
+                                                <td>
+                                                    <span class="text-green">+${task.totalCreated}</span>
                                                 </td>
-                                                <td class="px-5 py-5 border-b border-gray-200 bg-white text-sm">
-                                                    <p class="text-yellow-600 whitespace-no-wrap font-bold">~${task.totalUpdated}</p>
+                                                <td>
+                                                    <span class="text-yellow">~${task.totalUpdated}</span>
                                                 </td>
-                                                <td class="px-5 py-5 border-b border-gray-200 bg-white text-sm">
-                                                    <p class="text-red-600 whitespace-no-wrap font-bold">${task.totalFailed}</p>
+                                                <td>
+                                                    <span class="text-red">${task.totalFailed}</span>
                                                 </td>
                                             </tr>
                                         `;
