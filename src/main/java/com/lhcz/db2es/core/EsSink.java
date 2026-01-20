@@ -45,6 +45,9 @@ public class EsSink implements Runnable {
     private final AtomicLong totalUpdated = new AtomicLong(0);
     private final AtomicLong totalFailed = new AtomicLong(0);
 
+    // 🟢 新增：当前统计日期，用于判断是否跨天
+    private String currentStatDate;
+
     public EsSink(BlockingQueue<SyncData> queue, AppConfig.EsConfig esConfig, AppConfig.TaskConfig taskConfig, CheckpointManager cm, DeadLetterQueueManager dlq) {
         this.queue = queue;
         this.esConfig = esConfig;
@@ -55,6 +58,13 @@ public class EsSink implements Runnable {
                 .version(HttpClient.Version.HTTP_2)
                 .connectTimeout(Duration.ofSeconds(10))
                 .build();
+
+        // 🟢 初始化：加载当日统计数据 (实现重启不丢失)
+        CheckpointManager.DailyStats stats = checkpointManager.getDailyStats(taskConfig.tableName());
+        this.totalCreated.set(stats.created());
+        this.totalUpdated.set(stats.updated());
+        this.totalFailed.set(stats.failed());
+        this.currentStatDate = stats.date();
     }
 
     // 🟢 新增：Getter 方法供 WebConsole 使用
@@ -95,8 +105,28 @@ public class EsSink implements Runnable {
         return result;
     }
 
+    // 🟢 新增：检查日期变更并重置统计
+    private void checkDateAndReset() {
+        String today = LocalDate.now().toString();
+        if (!today.equals(currentStatDate)) {
+            totalCreated.set(0);
+            totalUpdated.set(0);
+            totalFailed.set(0);
+            currentStatDate = today;
+        }
+    }
+
+    // 🟢 新增：保存统计数据到磁盘
+    private void saveStats() {
+        checkpointManager.saveDailyStats(taskConfig.tableName(),
+                new CheckpointManager.DailyStats(totalCreated.get(), totalUpdated.get(), totalFailed.get(), currentStatDate));
+    }
+
     private void flush(List<SyncData> batch) {
         if (batch.isEmpty()) return;
+
+        // 1. 检查日期是否变更 (跨天重置)
+        checkDateAndReset();
 
         String realIndex = resolveIndexName(taskConfig.esIndex());
         String realType = (taskConfig.esType() != null && !taskConfig.esType().isBlank()) ? taskConfig.esType() : "_doc";
@@ -156,6 +186,7 @@ public class EsSink implements Runnable {
                         // 逻辑错误重试无效，直接存入死信队列
                         deadLetterQueueManager.save(taskConfig.tableName(), batch, "Logic_" + logicError);
                         totalFailed.addAndGet(batch.size()); // 统计失败
+                        saveStats(); // 保存统计
                         return; // 本批次结束，不抛异常，避免阻塞流水线
                     }
 
@@ -187,6 +218,7 @@ public class EsSink implements Runnable {
                     // 🟢 更新全局统计
                     totalCreated.addAndGet(created);
                     totalUpdated.addAndGet(updated);
+                    saveStats(); // 保存统计
 
                     // 🟢 修改：根据数据类型输出不同日志并控制 Checkpoint
                     if (repairCount == batch.size()) {
@@ -230,6 +262,7 @@ public class EsSink implements Runnable {
         log.error("❌ [{}] 重试耗尽，写入失败! 转存补录队列。原因: {}", taskConfig.tableName(), lastErrorReason);
         deadLetterQueueManager.save(taskConfig.tableName(), batch, lastErrorReason);
         totalFailed.addAndGet(batch.size()); // 统计失败
+        saveStats(); // 保存统计
     }
 
     private String parsePartialError(String responseBody) {

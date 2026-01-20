@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.time.LocalDate;
 import java.util.Properties;
 
 public class CheckpointManager {
@@ -15,6 +16,9 @@ public class CheckpointManager {
 
     // 🟢 新增：定义 Checkpoint 数据结构，供 EsSink 使用
     public record Checkpoint(long idVal, String timestampVal) {}
+
+    // 🟢 新增：每日统计数据结构
+    public record DailyStats(long created, long updated, long failed, String date) {}
 
     public CheckpointManager() {
         load();
@@ -46,6 +50,23 @@ public class CheckpointManager {
         return defaultVal;
     }
 
+    // 🟢 新增：获取每日统计 (带日期检查，跨天自动归零)
+    public DailyStats getDailyStats(String tableName) {
+        String savedDate = props.getProperty(tableName + ".stats.date");
+        String today = LocalDate.now().toString();
+
+        // 如果日期不一致（或者是新的一天），返回归零的统计
+        if (savedDate == null || !savedDate.equals(today)) {
+            return new DailyStats(0, 0, 0, today);
+        }
+
+        long created = Long.parseLong(props.getProperty(tableName + ".stats.created", "0"));
+        long updated = Long.parseLong(props.getProperty(tableName + ".stats.updated", "0"));
+        long failed = Long.parseLong(props.getProperty(tableName + ".stats.failed", "0"));
+
+        return new DailyStats(created, updated, failed, today);
+    }
+
     public synchronized void save(String tableName, Checkpoint checkpoint) {
         props.setProperty(tableName, String.valueOf(checkpoint.idVal));
         saveToFile();
@@ -54,6 +75,15 @@ public class CheckpointManager {
     // 🟢 新增：单独保存回溯进度
     public synchronized void saveRewind(String tableName, long rewindId) {
         props.setProperty(tableName + ".rewind", String.valueOf(rewindId));
+        saveToFile();
+    }
+
+    // 🟢 新增：保存每日统计
+    public synchronized void saveDailyStats(String tableName, DailyStats stats) {
+        props.setProperty(tableName + ".stats.date", stats.date());
+        props.setProperty(tableName + ".stats.created", String.valueOf(stats.created()));
+        props.setProperty(tableName + ".stats.updated", String.valueOf(stats.updated()));
+        props.setProperty(tableName + ".stats.failed", String.valueOf(stats.failed()));
         saveToFile();
     }
 
