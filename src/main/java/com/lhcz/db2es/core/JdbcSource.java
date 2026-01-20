@@ -32,6 +32,8 @@ public class JdbcSource implements Runnable {
 
     // 🟢 新增：内存中的回溯游标
     private long rewindStartId;
+    // 🟢 新增：当前主进度ID (用于监控)
+    private volatile long currentId;
 
     public JdbcSource(HikariDataSource ds, AppConfig.TaskConfig task, BlockingQueue<SyncData> queue, CheckpointManager cm) {
         this.ds = ds;
@@ -40,10 +42,18 @@ public class JdbcSource implements Runnable {
         this.checkpointManager = cm;
     }
 
+    public AppConfig.TaskConfig getTaskConfig() {
+        return task;
+    }
+
+    public long getCurrentId() {
+        return currentId;
+    }
+
     @Override
     public void run() {
         // 1. 获取起始进度 (优先读取断点文件，没有则使用配置的 startId)
-        long currentId = checkpointManager.getStartId(task.tableName(), task.startId());
+        this.currentId = checkpointManager.getStartId(task.tableName(), task.startId());
 
         // 🟢 初始化回溯游标：优先读文件，没有则默认从当前-10000开始
         this.rewindStartId = checkpointManager.getRewindId(task.tableName(), Math.max(0, currentId - REWIND_OFFSET));

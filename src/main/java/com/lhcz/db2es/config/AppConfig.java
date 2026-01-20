@@ -5,7 +5,7 @@ import java.util.List;
 /**
  * 应用配置记录类
  */
-public record AppConfig(DbConfig db, EsConfig es, List<TaskConfig> tasks) {
+public record AppConfig(DbConfig db, EsConfig es, WebConfig web, List<TaskConfig> tasks) {
 
     // 🟢 修改：增加了连接池相关配置
     public record DbConfig(
@@ -19,6 +19,9 @@ public record AppConfig(DbConfig db, EsConfig es, List<TaskConfig> tasks) {
     ) {}
 
     public record EsConfig(String url, String user, String password, int batchSize, int flushIntervalMs) {}
+
+    // 🟢 新增：Web 控制台配置
+    public record WebConfig(Integer port) {}
 
     public record TaskConfig(
             String tableName,

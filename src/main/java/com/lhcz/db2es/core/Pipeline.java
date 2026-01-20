@@ -7,6 +7,8 @@ import com.zaxxer.hikari.HikariDataSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -25,6 +27,10 @@ public class Pipeline {
     // 管理器组件
     private final CheckpointManager checkpointManager = new CheckpointManager();
     private final DeadLetterQueueManager deadLetterQueueManager = new DeadLetterQueueManager(); // 补录管理器
+
+    // 🟢 新增：保存任务引用以便 WebConsole 监控
+    private final List<JdbcSource> sources = new ArrayList<>();
+    private final List<EsSink> sinks = new ArrayList<>();
 
     public Pipeline(AppConfig config) {
         this.config = config;
@@ -63,9 +69,19 @@ public class Pipeline {
             JdbcSource source = new JdbcSource(ds, task, channel, checkpointManager);
             EsSink sink = new EsSink(channel, config.es(), task, checkpointManager, deadLetterQueueManager);
 
+            // 🟢 收集引用
+            sources.add(source);
+            sinks.add(sink);
+
             log.info("启动任务线程: 表[{}] -> 索引[{}]", task.tableName(), task.esIndex());
             executor.submit(source);
             executor.submit(sink);
+        }
+
+        // 🟢 启动 Web 控制台 (如果配置了端口)
+        if (config.web() != null && config.web().port() != null) {
+            WebConsole webConsole = new WebConsole(config.web().port(), sources, sinks);
+            webConsole.start();
         }
     }
 

@@ -20,6 +20,7 @@ import java.util.Base64;
 import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * ES 写入消费者
@@ -39,6 +40,11 @@ public class EsSink implements Runnable {
     private static final DateTimeFormatter FMT_MONTH = DateTimeFormatter.ofPattern("yyyy_MM");
     private static final DateTimeFormatter FMT_DAY = DateTimeFormatter.ofPattern("yyyy_MM_dd");
 
+    // 🟢 新增：统计指标 (用于 Web 监控)
+    private final AtomicLong totalCreated = new AtomicLong(0);
+    private final AtomicLong totalUpdated = new AtomicLong(0);
+    private final AtomicLong totalFailed = new AtomicLong(0);
+
     public EsSink(BlockingQueue<SyncData> queue, AppConfig.EsConfig esConfig, AppConfig.TaskConfig taskConfig, CheckpointManager cm, DeadLetterQueueManager dlq) {
         this.queue = queue;
         this.esConfig = esConfig;
@@ -50,6 +56,12 @@ public class EsSink implements Runnable {
                 .connectTimeout(Duration.ofSeconds(10))
                 .build();
     }
+
+    // 🟢 新增：Getter 方法供 WebConsole 使用
+    public long getTotalCreated() { return totalCreated.get(); }
+    public long getTotalUpdated() { return totalUpdated.get(); }
+    public long getTotalFailed() { return totalFailed.get(); }
+    public AppConfig.TaskConfig getTaskConfig() { return taskConfig; }
 
     @Override
     public void run() {
@@ -143,6 +155,7 @@ public class EsSink implements Runnable {
                         log.error("❌ [{}] 写入拒绝 (逻辑错误)! 原因: {}", taskConfig.tableName(), logicError);
                         // 逻辑错误重试无效，直接存入死信队列
                         deadLetterQueueManager.save(taskConfig.tableName(), batch, "Logic_" + logicError);
+                        totalFailed.addAndGet(batch.size()); // 统计失败
                         return; // 本批次结束，不抛异常，避免阻塞流水线
                     }
 
@@ -170,6 +183,10 @@ public class EsSink implements Runnable {
                     } catch (Exception e) {
                         log.warn("⚠️ 统计 ES 响应结果时出错: {}", e.getMessage());
                     }
+
+                    // 🟢 更新全局统计
+                    totalCreated.addAndGet(created);
+                    totalUpdated.addAndGet(updated);
 
                     // 🟢 修改：根据数据类型输出不同日志并控制 Checkpoint
                     if (repairCount == batch.size()) {
@@ -212,6 +229,7 @@ public class EsSink implements Runnable {
 
         log.error("❌ [{}] 重试耗尽，写入失败! 转存补录队列。原因: {}", taskConfig.tableName(), lastErrorReason);
         deadLetterQueueManager.save(taskConfig.tableName(), batch, lastErrorReason);
+        totalFailed.addAndGet(batch.size()); // 统计失败
     }
 
     private String parsePartialError(String responseBody) {
