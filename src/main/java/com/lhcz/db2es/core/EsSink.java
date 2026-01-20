@@ -130,8 +130,13 @@ public class EsSink implements Runnable {
                     log.info("✅ 成功写入 [{}] -> ES [{}] ({} 条)", taskConfig.tableName(), realIndex, batch.size());
 
                     if (!batch.isEmpty()) {
-                        String lastCursor = batch.get(batch.size() - 1).cursorVal();
-                        checkpointManager.save(taskConfig.tableName(), lastCursor);
+                        SyncData lastSyncData = batch.get(batch.size() - 1);
+                        // 🔴 获取ID和时间戳游标
+                        long lastIdCursor = lastSyncData.idCursorVal();
+                        String lastTimestampCursor = lastSyncData.timestampCursorVal();
+
+                        // 🔴 封装为Checkpoint对象并保存
+                        checkpointManager.save(taskConfig.tableName(), new CheckpointManager.Checkpoint(lastIdCursor, lastTimestampCursor));
                     }
                     return;
                 } else {
