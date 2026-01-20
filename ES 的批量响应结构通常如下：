@@ -1,0 +1,6 @@
+{
+  "items": [
+    { "index": { "result": "created", ... } },
+    { "index": { "result": "updated", ... } }
+  ]
+}

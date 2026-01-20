@@ -146,14 +146,40 @@ public class EsSink implements Runnable {
                         return; // 本批次结束，不抛异常，避免阻塞流水线
                     }
 
+                    // 🟢 新增：解析响应统计 Create/Update 数量
+                    int created = 0;
+                    int updated = 0;
+                    try {
+                        JsonNode root = mapper.readTree(body);
+                        JsonNode items = root.path("items");
+                        if (items.isArray()) {
+                            for (JsonNode item : items) {
+                                // 响应项通常是 {"index": {"_index":..., "result": "created", ...}}
+                                // 我们取第一个字段的值即可 (index/create/update)
+                                if (item.isObject() && item.fields().hasNext()) {
+                                    JsonNode resultNode = item.fields().next().getValue();
+                                    String resultStatus = resultNode.path("result").asText();
+                                    if ("created".equals(resultStatus)) {
+                                        created++;
+                                    } else if ("updated".equals(resultStatus)) {
+                                        updated++;
+                                    }
+                                }
+                            }
+                        }
+                    } catch (Exception e) {
+                        log.warn("⚠️ 统计 ES 响应结果时出错: {}", e.getMessage());
+                    }
+
                     // 🟢 修改：根据数据类型输出不同日志并控制 Checkpoint
                     if (repairCount == batch.size()) {
                         // 全是修复数据
-                        log.info("✅ [回溯验证] 成功将 {} 条历史数据再次写入 ES (用于填补并发空洞)", repairCount);
+                        log.info("✅ [回溯验证] 成功将 {} 条历史数据再次写入 ES (Create:{}, Update:{})", 
+                                repairCount, created, updated);
                     } else {
                         // 包含正常数据
-                        log.info("✅ 成功写入 [{}] -> ES [{}] ({} 条, 含 {} 条修复)",
-                                taskConfig.tableName(), realIndex, batch.size(), repairCount);
+                        log.info("✅ 成功写入 [{}] -> ES [{}] ({} 条, 含 {} 条修复) [Create:{}, Update:{}]",
+                                taskConfig.tableName(), realIndex, batch.size(), repairCount, created, updated);
                     }
 
                     // 🟢 关键：只有存在正常增量数据时，才更新 Checkpoint
