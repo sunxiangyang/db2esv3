@@ -48,16 +48,13 @@ public class EsSink implements Runnable {
     // 🟢 新增：当前统计日期，用于判断是否跨天
     private String currentStatDate;
 
-    public EsSink(BlockingQueue<SyncData> queue, AppConfig.EsConfig esConfig, AppConfig.TaskConfig taskConfig, CheckpointManager cm, DeadLetterQueueManager dlq) {
+    public EsSink(BlockingQueue<SyncData> queue, AppConfig.EsConfig esConfig, AppConfig.TaskConfig taskConfig, CheckpointManager cm, DeadLetterQueueManager dlq, HttpClient httpClient) {
         this.queue = queue;
         this.esConfig = esConfig;
         this.taskConfig = taskConfig;
         this.checkpointManager = cm;
         this.deadLetterQueueManager = dlq;
-        this.httpClient = HttpClient.newBuilder()
-                .version(HttpClient.Version.HTTP_2)
-                .connectTimeout(Duration.ofSeconds(10))
-                .build();
+        this.httpClient = httpClient;
 
         // 🟢 初始化：加载当日统计数据 (实现重启不丢失)
         CheckpointManager.DailyStats stats = checkpointManager.getDailyStats(taskConfig.tableName());
@@ -252,7 +249,7 @@ public class EsSink implements Runnable {
                 }
             } catch (Exception e) {
                 lastErrorReason = "Exception_" + e.getClass().getSimpleName();
-                log.warn("⚠️ [{}] 写入异常，正在重试 {}/3 ... {}", taskConfig.tableName(), retries + 1, e.getMessage());
+                log.warn("⚠️ [{}] 写入异常，正在重试 {}/3 ... Error: {}", taskConfig.tableName(), retries + 1, e.toString());
             }
 
             retries++;

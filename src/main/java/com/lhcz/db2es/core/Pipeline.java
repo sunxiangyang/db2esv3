@@ -7,6 +7,8 @@ import com.zaxxer.hikari.HikariDataSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.net.http.HttpClient;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.BlockingQueue;
@@ -31,6 +33,9 @@ public class Pipeline {
     // 🟢 新增：保存任务引用以便 WebConsole 监控
     private final List<JdbcSource> sources = new ArrayList<>();
     private final List<EsSink> sinks = new ArrayList<>();
+
+    // 🟢 修复：持有 HttpClient 强引用，防止被 GC 导致 "selector manager closed" 错误
+    private HttpClient httpClient;
 
     public Pipeline(AppConfig config) {
         this.config = config;
@@ -62,12 +67,18 @@ public class Pipeline {
 
         HikariDataSource ds = new HikariDataSource(hikariConfig);
 
+        // 🟢 初始化共享的 HttpClient (避免每个任务创建独立客户端导致 selector manager closed)
+        this.httpClient = HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_2)
+                .connectTimeout(Duration.ofSeconds(10))
+                .build();
+
         for (AppConfig.TaskConfig task : config.tasks()) {
             // 有界队列实现背压
             BlockingQueue<SyncData> channel = new LinkedBlockingQueue<>(5000);
 
             JdbcSource source = new JdbcSource(ds, task, channel, checkpointManager);
-            EsSink sink = new EsSink(channel, config.es(), task, checkpointManager, deadLetterQueueManager);
+            EsSink sink = new EsSink(channel, config.es(), task, checkpointManager, deadLetterQueueManager, this.httpClient);
 
             // 🟢 收集引用
             sources.add(source);
